@@ -1,4 +1,4 @@
-package com.example.googlemapsproject
+package com.example.googlemapsproject.view
 
 import android.content.pm.PackageManager
 import android.location.Location
@@ -9,13 +9,15 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.Manifest
-import android.app.Instrumentation.ActivityResult
+import android.content.Intent
 import android.content.SharedPreferences
+import android.view.View
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material3.Snackbar
+import androidx.room.Room
+import androidx.room.RoomDatabase
+import com.example.googlemapsproject.R
 import com.google.android.material.snackbar.Snackbar
 
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -25,6 +27,12 @@ import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MarkerOptions
 import com.example.googlemapsproject.databinding.ActivityMapsBinding
+import com.example.googlemapsproject.model.Place
+import com.example.googlemapsproject.roomdb.PlaceDao
+import com.example.googlemapsproject.roomdb.PlaceDatabase
+import io.reactivex.disposables.CompositeDisposable
+import io.reactivex.schedulers.Schedulers
+import org.jetbrains.annotations.Async.Schedule
 
 
 class MapsActivity : AppCompatActivity(), OnMapReadyCallback , GoogleMap.OnMapLongClickListener{ // long Click listener uzun tıklamalarda haritada işaret koymamız için
@@ -38,7 +46,9 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback , GoogleMap.OnMapLo
     private var trackBoolean : Boolean? = null
     private var selectedLatitude : Double? = null
     private var selectedLongitude : Double? = null
-
+    private lateinit var db :PlaceDatabase
+    private lateinit var placeDao : PlaceDao
+    val compositDisposable = CompositeDisposable()// tek kullanımlık kullan at bellekte yer tutmaması içi rxJava kullanır
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -49,6 +59,8 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback , GoogleMap.OnMapLo
        trackBoolean = false
         selectedLatitude = 0.0
         selectedLongitude = 0.0
+        db = Room.databaseBuilder(applicationContext,PlaceDatabase::class.java,"Places").build()
+        placeDao = db.placeDao()
         val mapFragment = supportFragmentManager
             .findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
@@ -130,6 +142,35 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback , GoogleMap.OnMapLo
         selectedLatitude = p0.latitude
         selectedLongitude = p0.longitude
     // hangi pozisyonda oldugumuzu callback function verdigi icin isaretci koymak kolay hake geldi
+    }
+
+    fun save(view : View){
+    val name =binding.placeText.text.toString()
+    val lat=    selectedLatitude
+        val long = selectedLongitude
+    val place  = lat?.let { long?.let { it1 -> Place(name, it, it1) } }
+        place?.let {
+            compositDisposable.add(placeDao.insert(it) // ekle
+                .subscribeOn(Schedulers.io()) // işlemi io da yap
+                .observeOn(AndroidSchedulers.mainThread()) // sonucu mainthread de ele alacagiz
+                .subscribe(this::handlerResponse) // subscribe() da bu işlem bittikten sonra ne olacagını bu fonksiyona vermemiz gerekir
+            )
+        }
+
+    }
+    private fun handlerResponse(){
+        val intent = Intent(this, MainActivity :: class.java)
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)// kalan sayfaları bellekten sil
+        startActivity(intent)
+
+    }
+    fun delete(view : View){
+
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        compositDisposable.clear()
     }
 }
 
